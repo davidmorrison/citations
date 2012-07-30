@@ -23,7 +23,6 @@ def get_page(url):
     return None 
 
 def get_marc(url):
-    print "Getting " + url
     xml = get_page(url)
     f = tempfile.NamedTemporaryFile(delete=False)
     f.write(xml)
@@ -83,10 +82,27 @@ def get_date(record):
         
     return "2100-01-01 12:00:00"
 
+# INSPIRES silently imposes an upper limit of 200 on the number of
+# MARCXML records it returns.  Do a recid query first to find out how
+# many records we expect and then keep issuing queries for partial
+# results and concatenating them.
 def get_refersto(record):
     recid = get_recid(record)
-    url = "http://inspirehep.net/search?of=xm&rg=10000&p=refersto%3Arecid%3A" + str(recid)
-    records = get_marc(url)
+    url = "http://inspirehep.net/search?of=id&rg=2000&p=refersto%3Arecid%3A" + str(recid)
+    recids_json = get_page(url)
+    try:
+        recids = json.loads(recids_json)
+    except:
+        recids = list()
+    N = len(recids)
+    records = list()
+    n = 0
+    while n < N:
+        url = "http://inspirehep.net/search?of=xm&rg=200&p=refersto%3Arecid%3A" + str(recid) + "&jrec=" + str(n+1)
+        tmp_records = get_marc(url)
+        n += len(tmp_records)
+        records.extend(tmp_records)
+        
     return records
 
 def insert_article(recid, date):
@@ -105,22 +121,22 @@ def insert_citation(citer_recid, citee_recid):
     else:
         conn.commit()
 
-conn_string = "host='localhost' dbname='star' user='postgres' password=''"
+conn_string = "host='localhost' dbname='phenix' user='postgres' password=''"
 conn = psycopg2.connect(conn_string)
 cursor = conn.cursor()
 
-#cursor.execute("DROP TABLE articles")
-#cursor.execute("CREATE TABLE articles (recid int NOT NULL, date date, PRIMARY KEY (recid))")
-#cursor.execute("DROP TABLE cites")
-#cursor.execute("CREATE TABLE cites (citer int, citee int, PRIMARY KEY (citer,citee))")
+cursor.execute("DROP TABLE articles")
+cursor.execute("CREATE TABLE articles (recid int NOT NULL, date date, PRIMARY KEY (recid))")
+cursor.execute("DROP TABLE cites")
+cursor.execute("CREATE TABLE cites (citer int, citee int, PRIMARY KEY (citer,citee))")
 
 opener = urllib2.build_opener()
 
-records = get_records("bnl-rhic-star")
+records = get_records("bnl-rhic-phenix")
 
 n = 0
 N = len(records)
-
+M = 0
 for citee in records:
     n += 1
     print "Working on " + str(n) + " of " + str(N)
@@ -128,12 +144,12 @@ for citee in records:
     citee_recid = get_recid(citee)
     citee_date = get_date(citee)
 
-    print citee_recid + " " + citee_date
-
     insert_article(citee_recid, citee_date)
 
     refersto_records = get_refersto(citee)
-    print "Found " + str(len(refersto_records)) + " citers"
+    m = len(refersto_records)
+    M += m
+    print "Found " + str(m) + " citers"
 
     for citer in refersto_records:
         citer_recid = get_recid(citer)
@@ -143,6 +159,8 @@ for citee in records:
 
         insert_citation(citer_recid, citee_recid)
             
+print "Found a total of " + str(M) + " citations."
+
 conn.commit()
 conn.close()
 
