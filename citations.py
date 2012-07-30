@@ -121,18 +121,18 @@ def insert_citation(citer_recid, citee_recid):
     else:
         conn.commit()
 
-conn_string = "host='localhost' dbname='phenix' user='postgres' password=''"
+conn_string = "host='localhost' dbname='brahms' user='postgres' password=''"
 conn = psycopg2.connect(conn_string)
 cursor = conn.cursor()
 
-cursor.execute("DROP TABLE articles")
+#cursor.execute("DROP TABLE articles")
 cursor.execute("CREATE TABLE articles (recid int NOT NULL, date date, PRIMARY KEY (recid))")
-cursor.execute("DROP TABLE cites")
+#cursor.execute("DROP TABLE cites")
 cursor.execute("CREATE TABLE cites (citer int, citee int, PRIMARY KEY (citer,citee))")
 
 opener = urllib2.build_opener()
 
-records = get_records("bnl-rhic-phenix")
+records = get_records("bnl-rhic-brahms")
 
 n = 0
 N = len(records)
