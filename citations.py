@@ -170,9 +170,10 @@ class Citations(object):
       else:
           self.conn.commit()
 
-cites = Citations()
-#cites.drop_tables()
-cites.create_tables()
+if __name__ == '__main__':
+  cites = Citations()
+  #cites.drop_tables()
+  cites.create_tables()
 
-records = cites.get_records("bnl-rhic-brahms")
-cites.process(records)
+  records = cites.get_records("bnl-rhic-brahms")
+  cites.process(records)
