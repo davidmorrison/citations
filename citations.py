@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import psycopg2
 import os
 import re
 import tempfile
@@ -9,26 +8,68 @@ import urllib2
 import io
 import time
 import json
+import datetime
 
+### DATABASE ABSTRACTION ###########################
+from sqlalchemy.ext.declarative import declarative_base
+Base = declarative_base()
+
+from sqlalchemy import Column, Integer, Date
+
+class Article(Base):
+    __tablename__ = 'articles'
+    id = Column(Integer, primary_key=True)
+    recid = Column(Integer)
+    date  = Column(Date)
+
+class Cite(Base):
+    __tablename__ = 'cites'
+    id = Column(Integer, primary_key=True)
+    citer = Column(Integer)
+    citee = Column(Integer)
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+class DB(object):
+    def __init__(self, db_uri='sqlite:///:memory:'):
+        """
+        Create a database interface
+
+        db_uri can be any backend connect string supported by sqlalchemy, see http://docs.sqlalchemy.org/en/rel_0_7/core/engines.html.
+        To e.g. connect to a localhost postgres db and work with a db named brahms as user me with password passwd use a uri
+
+            postgresql://me:passwd@localhost/brahms
+
+        A simple solution is to use a file-based sqlite database.
+
+            sqlite:///brahms.db
+
+        The default creates a in-memory sqlite database. Nothing is saved after program exit.
+        """
+
+        self.engine = create_engine(db_uri, echo=False)
+
+        Session = sessionmaker(bind=self.engine)
+        self.session = Session()
+
+    def __del__(self):
+        self.session.commit()
+    def create_tables(self):
+        Base.metadata.create_all(self.engine)
+    def drop_tables(self):
+        Base.metadata.drop_all(self.engine)
+    def insert_article(self, recid, date):
+        y, m, d = date.split()[0].split('-')
+        self.session.add(Article(recid=recid, date=datetime.date(int(y), int(m), int(d))))
+    def insert_citation(self, citer, citee):
+        self.session.add(Cite(citer=citer, citee=citee))
+
+####################################################
 
 class Citations(object):
     def __init__(self):
-        self.conn_string = "host='localhost' dbname='brahms' user='postgres' password=''"
-        self.conn = psycopg2.connect(self.conn_string)
-        self.cursor = self.conn.cursor()
         self.opener = urllib2.build_opener()
-
-    def __del__(self):
-        self.conn.commit()
-        self.conn.close()
-
-    def create_tables(self):
-        self.cursor.execute("CREATE TABLE articles (recid int NOT NULL, date date, PRIMARY KEY (recid))")
-        self.cursor.execute("CREATE TABLE cites (citer int, citee int, PRIMARY KEY (citer,citee))")
-
-    def drop_tables(self):
-        self.cursor.execute("DROP TABLE articles")
-        self.cursor.execute("DROP TABLE cites")
 
     def get_records(self, experiment):
         """ This retrieves the list of records for a given experiment """
@@ -58,7 +99,7 @@ class Citations(object):
                 pass
         return None
 
-    def process(self, records):  # FIXME this needs a better name
+    def process(self, records, db):  # FIXME this needs a better name
         n = 0
         N = len(records)
         M = 0
@@ -69,7 +110,7 @@ class Citations(object):
             citee_recid = self.get_recid(citee)
             citee_date = self.get_date(citee)
 
-            self.insert_article(citee_recid, citee_date)
+            db.insert_article(citee_recid, citee_date)
 
             refersto_records = self.get_refersto(citee)
             m = len(refersto_records)
@@ -80,9 +121,8 @@ class Citations(object):
                 citer_recid = self.get_recid(citer)
                 citer_date = self.get_date(citer)
 
-                self.insert_article(citer_recid, citer_date)
-
-                self.insert_citation(citer_recid, citee_recid)
+                db.insert_article(citer_recid, citer_date)
+                db.insert_citation(citer_recid, citee_recid)
 
         print "Found a total of " + str(M) + " citations."
 
@@ -155,26 +195,11 @@ class Citations(object):
 
         return records
 
-    def insert_article(self, recid, date):
-        try:
-            self.cursor.execute("INSERT INTO articles(recid, date) VALUES(%s, %s)", (recid, date))
-        except psycopg2.IntegrityError:
-            self.conn.rollback()
-        else:
-            self.conn.commit()
-
-    def insert_citation(self, citer_recid, citee_recid):
-        try:
-            self.cursor.execute("INSERT INTO cites(citer, citee) VALUES(%s, %s)", (citer_recid, citee_recid))
-        except psycopg2.IntegrityError:
-            self.conn.rollback()
-        else:
-            self.conn.commit()
-
 if __name__ == '__main__':
-    cites = Citations()
-    #cites.drop_tables()
-    cites.create_tables()
+    db = DB('sqlite:///brahms.db')
+    #db.drop_tables()
+    db.create_tables()
 
+    cites = Citations()
     records = cites.get_records("bnl-rhic-brahms")
-    cites.process(records)
+    cites.process(records, db)
