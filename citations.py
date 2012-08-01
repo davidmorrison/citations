@@ -5,7 +5,6 @@ import re
 import tempfile
 import pymarc
 import urllib2
-import io
 import time
 import json
 import datetime
